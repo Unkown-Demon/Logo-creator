@@ -105,3 +105,44 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Python virtual environment
+venv/
+env/
+.venv/
+.env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PIPFILE.lock
+
+# Large files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.gif
+*.webm
+*.zip
+*.tar.gz
