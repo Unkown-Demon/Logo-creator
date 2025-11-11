@@ -1,0 +1,11 @@
+aiogram==3.10.0
+python-dotenv==1.2.1
+moviepy==1.0.3
+rembg==2.0.51
+Pillow==10.3.0
+# Boshqa kerakli kutubxonalar:
+# numpy
+# imageio
+# imageio-ffmpeg
+# onnxruntime
+# opencv-python-headless
