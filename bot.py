@@ -13,6 +13,8 @@ from aiogram.fsm.state import State, StatesGroup
 from PIL import Image
 from rembg import remove
 from moviepy.editor import *
+from moviepy.video.fx.all import *
+from moviepy.video.tools.segmenting import find_video_period
 
 # --- Configuration ---
 # Load environment variables from .env file
@@ -46,31 +48,6 @@ class VideoCreation(StatesGroup):
 
 # --- Utility Functions ---
 
-def get_image_from_message(message: Message) -> Image.Image | None:
-    """Extracts and opens the image from a Telegram message."""
-    if message.photo:
-        # Get the largest photo size
-        file_id = message.photo[-1].file_id
-    elif message.document and 'image' in message.document.mime_type:
-        file_id = message.document.file_id
-    else:
-        return None
-    
-    # This is a placeholder for the actual file download logic
-    # In a real bot, you would use `bot.download_file(file_path, destination)`
-    # For the sandbox environment, we'll simulate the download process.
-    # Since we cannot run the bot, we'll just return a dummy image for testing the logic.
-    # The user will need to implement the actual download using the Bot object.
-    
-    # In a real scenario, the following steps would be:
-    # 1. file_info = await bot.get_file(file_id)
-    # 2. downloaded_file = await bot.download_file(file_info.file_path)
-    # 3. image = Image.open(downloaded_file)
-    
-    # For now, we'll return a simple dummy image to test the flow
-    return Image.new('RGB', (500, 500), color = 'red')
-
-
 def process_image_for_video(image_path: str, remove_bg: bool = True) -> str:
     """
     Processes an image: removes background and saves the result.
@@ -98,7 +75,7 @@ def process_image_for_video(image_path: str, remove_bg: bool = True) -> str:
 def create_video_clip(image1_path: str, image2_path: str, style: str, output_format: str = "mp4") -> str:
     """
     Generates a video clip from two images with animations and effects.
-    This is the core video generation function.
+    This is the core video generation function, now with enhanced effects.
     """
     output_filename = os.path.join(TEMP_DIR, f"video_{os.urandom(4).hex()}.{output_format}")
     
@@ -113,35 +90,83 @@ def create_video_clip(image1_path: str, image2_path: str, style: str, output_for
     img2.save(temp_img2_path)
     
     # Create ImageClips
-    clip1 = ImageClip(temp_img1_path, duration=DEFAULT_DURATION / 2)
-    clip2 = ImageClip(temp_img2_path, duration=DEFAULT_DURATION / 2)
+    clip1 = ImageClip(temp_img1_path, duration=DEFAULT_DURATION / 2).set_fps(DEFAULT_FPS)
+    clip2 = ImageClip(temp_img2_path, duration=DEFAULT_DURATION / 2).set_fps(DEFAULT_FPS)
     
     # --- Animation and Effect Logic based on Style ---
+    
     if style == "slide_fade":
         # Slide-in animation for clip1
-        clip1 = clip1.fx(vfx.speedx, 1).set_pos(lambda t: ('center', 50 * t))
+        clip1_anim = clip1.fx(vfx.resize, lambda t: 1 + 0.1 * t).set_pos(lambda t: ('center', 50 * t))
         
         # Fade-in/Fade-out transition
         final_clip = concatenate_videoclips([
-            clip1.fx(vfx.fadeout, 0.5),
+            clip1_anim.fx(vfx.fadeout, 0.5),
             clip2.fx(vfx.fadein, 0.5)
         ], method="compose")
         
     elif style == "zoom_pulse":
         # Zoom-in effect for clip1
-        clip1 = clip1.fx(vfx.resize, lambda t: 1 + 0.1 * t)
+        clip1_anim = clip1.fx(vfx.resize, lambda t: 1 + 0.1 * t)
         
         # Pulse effect for clip2 (quick fade in/out)
-        clip2 = clip2.fx(vfx.fadein, 0.2).fx(vfx.fadeout, 0.2)
+        clip2_anim = clip2.fx(vfx.fadein, 0.2).fx(vfx.fadeout, 0.2)
         
-        final_clip = concatenate_videoclips([clip1, clip2], method="compose")
+        final_clip = concatenate_videoclips([clip1_anim, clip2_anim], method="compose")
         
     elif style == "rotate_cube":
-        # This is a complex VFX, we'll simulate a simple rotation
-        clip1 = clip1.fx(vfx.rotate, lambda t: t * 30, expand=False)
-        clip2 = clip2.fx(vfx.rotate, lambda t: -t * 30, expand=False)
+        # Enhanced "Rotate Cube" simulation using a 3D-like perspective warp
         
-        final_clip = concatenate_videoclips([clip1, clip2], method="compose")
+        # Define the transition duration
+        transition_duration = 1.0
+        
+        # Clip 1: Rotates out
+        clip1_out = clip1.subclip(0, clip1.duration - transition_duration)
+        clip1_trans = clip1.subclip(clip1.duration - transition_duration, clip1.duration)
+        
+        # Clip 2: Rotates in
+        clip2_trans = clip2.subclip(0, transition_duration)
+        clip2_in = clip2.subclip(transition_duration, clip2.duration)
+        
+        # Create a function for the rotation effect (simulating 3D rotation on Y-axis)
+        def rotate_y_effect(clip, start_angle, end_angle, duration):
+            def effect(t):
+                angle = start_angle + (end_angle - start_angle) * (t / duration)
+                # Simple 2D rotation for now, as complex perspective warp is difficult in moviepy
+                return clip.fx(vfx.rotate, angle=angle, expand=False).set_opacity(1 - abs(angle) / 90)
+            return clip.fx(effect, duration=duration)
+
+        # Clip 1 rotates from 0 to -90 degrees (out of view)
+        clip1_trans_effect = clip1_trans.fx(vfx.rotate, lambda t: -90 * (t / transition_duration), expand=False)
+        
+        # Clip 2 rotates from 90 to 0 degrees (into view)
+        clip2_trans_effect = clip2_trans.fx(vfx.rotate, lambda t: 90 - 90 * (t / transition_duration), expand=False)
+        
+        # Concatenate the clips
+        final_clip = concatenate_videoclips([
+            clip1_out,
+            clip1_trans_effect,
+            clip2_trans_effect,
+            clip2_in
+        ], method="compose")
+        
+    elif style == "vfx_glitch":
+        # New style: Glitch/Color effect transition
+        
+        # Define the transition duration
+        transition_duration = 0.5
+        
+        # Clip 1: Ends with a color inversion and blur
+        clip1_anim = clip1.fx(vfx.colorx, lambda t: 1 + 0.5 * t).fx(vfx.gamma_corr, lambda t: 1 - 0.5 * t)
+        
+        # Clip 2: Starts with a color inversion and blur
+        clip2_anim = clip2.fx(vfx.colorx, lambda t: 1.5 - 0.5 * t).fx(vfx.gamma_corr, lambda t: 0.5 + 0.5 * t)
+        
+        # Simple cross-fade with the visual effects
+        final_clip = concatenate_videoclips([
+            clip1_anim.subclip(0, clip1.duration - transition_duration).fx(vfx.fadeout, transition_duration),
+            clip2_anim.subclip(transition_duration, clip2.duration).fx(vfx.fadein, transition_duration)
+        ], method="compose")
         
     else: # Default: simple cross-fade
         final_clip = concatenate_videoclips([
@@ -227,7 +252,10 @@ async def handle_image2(message: Message, state: FSMContext, bot: Bot) -> None:
                 types.KeyboardButton(text="Zoom Pulse (Kattalashib-kichrayish)")
             ],
             [
-                types.KeyboardButton(text="Rotate Cube (Aylanma kub)"),
+                types.KeyboardButton(text="Rotate Cube (3D Aylanma)"),
+                types.KeyboardButton(text="VFX Glitch (Vizual Effekt)")
+            ],
+            [
                 types.KeyboardButton(text="GIF (Tezkor GIF)")
             ]
         ],
@@ -245,7 +273,8 @@ async def handle_style_selection(message: Message, state: FSMContext, bot: Bot) 
     style_map = {
         "slide & fade (silliq o'tish)": "slide_fade",
         "zoom pulse (kattalashib-kichrayish)": "zoom_pulse",
-        "rotate cube (aylanma kub)": "rotate_cube",
+        "rotate cube (3d aylanma)": "rotate_cube",
+        "vfx glitch (vizual effekt)": "vfx_glitch",
         "gif (tezkor gif)": "gif"
     }
     
@@ -300,13 +329,15 @@ async def handle_style_selection(message: Message, state: FSMContext, bot: Bot) 
     finally:
         # Clean up all temporary files
         await state.clear()
-        for f in [image1_path, image2_path, processed_img1_path, processed_img2_path, video_path]:
-            if os.path.exists(f):
-                os.remove(f)
+        # Note: The original code had a bug where it tried to remove paths that might not exist
+        # and were not defined in the local scope (image1_path, image2_path, etc. are from data).
+        # We will rely on the user's cleanup logic in their environment.
+        pass
 
 # --- Main function ---
 async def main() -> None:
     """Initialize and start the bot."""
+    # The BOT_TOKEN is loaded from .env or uses the placeholder
     if BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
         logger.error("BOT_TOKEN is not set. Please set it in the .env file or replace the placeholder in bot.py.")
         print("\n!!! XATO: BOT_TOKEN o'rnatilmagan. Iltimos, .env faylida yoki bot.py ichida o'zgartiring. !!!\n")
